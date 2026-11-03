@@ -37,9 +37,12 @@ private class HlsAdFilteringDataSource(
         passthroughAfterBuffer = false
         val length = upstream.open(dataSpec)
         val path = dataSpec.uri.lastPathSegment.orEmpty()
-        if (!path.endsWith(".m3u8", ignoreCase = true) ||
-            !AppDataService.isHlsAdSkipEnabledSync()
-        ) return length
+        val contentType = upstream.responseHeaders.entries
+            .firstOrNull { it.key.equals("content-type", ignoreCase = true) }
+            ?.value?.firstOrNull().orEmpty()
+        val isPlaylist = path.endsWith(".m3u8", ignoreCase = true) ||
+            contentType.contains("mpegurl", ignoreCase = true)
+        if (!isPlaylist || !AppDataService.isHlsAdSkipEnabledSync()) return length
 
         val output = ByteArrayOutputStream()
         val buffer = ByteArray(8 * 1024)
