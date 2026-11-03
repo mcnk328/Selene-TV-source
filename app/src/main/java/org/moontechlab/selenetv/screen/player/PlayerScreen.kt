@@ -324,7 +324,7 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
     // HLS 广告标记识别：仅对 m3u8 播放列表读取明确的 CUE/SCTE 标记；无标记时不猜测。
     LaunchedEffect(currentEpisode, currentSourceKey, hlsAdSkipEnabled) {
         hlsAdSegments = emptyList()
-        if (!hlsAdSkipEnabled) return@LaunchedEffect
+        if (!hlsAdSkipEnabled || controller !is MpvPlayerController) return@LaunchedEffect
         val raw = currentSource?.episodes?.getOrNull(currentEpisode) ?: return@LaunchedEffect
         if (!raw.contains(".m3u8", ignoreCase = true)) return@LaunchedEffect
         val proxy = org.moontechlab.selenetv.service.AppDataService.getM3u8ProxyUrl()
@@ -334,7 +334,7 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
 
     // 播放位置进入明确标记的广告区间时自动 seek 到广告段末尾；ExoPlayer/MPV 共用 VideoPlayer.seekTo。
     LaunchedEffect(hlsAdSkipEnabled, hlsAdSegments) {
-        if (!hlsAdSkipEnabled || hlsAdSegments.isEmpty()) return@LaunchedEffect
+        if (!hlsAdSkipEnabled || controller !is MpvPlayerController || hlsAdSegments.isEmpty()) return@LaunchedEffect
         val skippedStarts = mutableSetOf<Long>()
         while (isActive) {
             if (controller.isPlaying) {
