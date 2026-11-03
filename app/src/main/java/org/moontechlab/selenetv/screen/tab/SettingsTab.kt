@@ -435,7 +435,7 @@ fun SettingsTab(
                 )
                 SettingRow(
                     label = "广告分片关键词",
-                    value = "${hlsAdKeywords.split(",", ";", "\\n").count { it.isNotBlank() }} 条",
+                    value = "${hlsAdKeywords.split(",", ";", "\n").count { it.isNotBlank() }} 条",
                     onClick = { showHlsAdKeywordsDialog = true },
                     modifier = Modifier.focusRequester(hlsAdKeywordsFocusRequester),
                 )
