@@ -33,6 +33,7 @@ object AppDataService {
     private const val KEY_SEARCH_ORIGIN = "search_origin"
     private const val KEY_IS_LOCAL_MODE = "is_local_mode"
     private const val KEY_HLS_AD_SKIP_ENABLED = "hls_ad_skip_enabled"
+    private const val KEY_HLS_AD_SKIP_KEYWORDS = "hls_ad_skip_keywords"
     private const val KEY_SKIPPED_VERSION = "skipped_version"
     private const val KEY_UPDATE_POSTPONED_UNTIL = "update_postponed_until"
     private const val KEY_DANMAKU_ENABLED = "danmaku_enabled"   // 旧开关（仅迁移读）
@@ -54,6 +55,9 @@ object AppDataService {
     // HLS 广告标记自动跳过开关（默认开启）
     @Volatile
     private var hlsAdSkipEnabledCache: Boolean = true
+
+    @Volatile
+    private var hlsAdSkipKeywordsCache: List<String> = HlsPlaylistAdFilter.defaultKeywords
 
     // 本地模式缓存（同步读，零阻塞）
     @Volatile
@@ -91,6 +95,7 @@ object AppDataService {
         lowRamCache = computeLowRam(context)
         isLocalModeCache = prefs.getBoolean(KEY_IS_LOCAL_MODE, false)
         hlsAdSkipEnabledCache = prefs.getBoolean(KEY_HLS_AD_SKIP_ENABLED, true)
+        hlsAdSkipKeywordsCache = parseHlsAdSkipKeywords(prefs.getString(KEY_HLS_AD_SKIP_KEYWORDS, null))
         // 区域 off 仍保留（播放页可暂时关闭）。
         val rawArea = prefs.getString(KEY_DANMAKU_AREA, null)
             ?: if (prefs.getBoolean(KEY_DANMAKU_ENABLED, false)) "full" else "off"
@@ -302,6 +307,22 @@ object AppDataService {
     }
 
     fun isHlsAdSkipEnabledSync(): Boolean = hlsAdSkipEnabledCache
+
+    suspend fun setHlsAdSkipKeywords(value: String) = withContext(Dispatchers.IO) {
+        val keywords = parseHlsAdSkipKeywords(value)
+        prefs.edit().putString(KEY_HLS_AD_SKIP_KEYWORDS, keywords.joinToString(",")).apply()
+        hlsAdSkipKeywordsCache = keywords
+    }
+
+    fun getHlsAdSkipKeywordsSync(): List<String> = hlsAdSkipKeywordsCache
+
+    private fun parseHlsAdSkipKeywords(value: String?): List<String> {
+        if (value == null) return HlsPlaylistAdFilter.defaultKeywords
+        return value.split(",", "\\n", ";")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinctBy { it.lowercase() }
+    }
 
     // ==================== 弹幕设置 ====================
 
