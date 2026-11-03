@@ -189,6 +189,7 @@ fun SettingsTab(
     var isLocalMode by remember { mutableStateOf(AppDataService.isLocalModeSync()) }
     // 弹幕默认模式：off（完全关闭）/ manual（默认不开启）/ auto（默认开启）。点按循环。
     var danmakuMode by remember { mutableStateOf(AppDataService.getDanmakuModeSync()) }
+    var adBlockEnabled by remember { mutableStateOf(AppDataService.isAdBlockEnabledSync()) }
     // 弹幕源启用集合（多选）
     var enabledDanmakuSources by remember { mutableStateOf(AppDataService.getEnabledDanmakuSourcesSync()) }
     var showDanmakuSourcesDialog by remember { mutableStateOf(false) }
@@ -420,6 +421,16 @@ fun SettingsTab(
                     value = decodeMode.ifEmpty { "硬解" },
                     onClick = { showDecodeModeDialog = true },
                     modifier = Modifier.focusRequester(decodeModeFocusRequester)
+                )
+                // 按 FongMi/OK 配置的 ads 域名黑名单思路拦截广告请求；当前作用于 ExoPlayer 网络层。
+                SettingRow(
+                    label = "自动去广告",
+                    value = if (adBlockEnabled) "开启" else "关闭",
+                    onClick = {
+                        val next = !adBlockEnabled
+                        adBlockEnabled = next
+                        coroutineScope.launch { AppDataService.setAdBlockEnabled(next) }
+                    },
                 )
                 // 弹幕默认模式（点按循环）：关闭=完全不请求/不显示按键；手动=probe 但不自动选源；自动=自动选最佳源。
                 SettingRow(
