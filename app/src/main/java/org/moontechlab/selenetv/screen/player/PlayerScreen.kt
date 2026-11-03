@@ -336,7 +336,7 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
     LaunchedEffect(hlsAdSkipEnabled, hlsAdSegments) {
         if (!hlsAdSkipEnabled || hlsAdSegments.isEmpty()) return@LaunchedEffect
         val skippedStarts = mutableSetOf<Long>()
-        while (kotlinx.coroutines.isActive) {
+        while (isActive) {
             if (controller.isPlaying) {
                 val position = controller.positionMs
                 val ad = hlsAdSegments.firstOrNull {
