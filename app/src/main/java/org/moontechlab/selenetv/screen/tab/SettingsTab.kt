@@ -187,6 +187,7 @@ fun SettingsTab(
     val checkUpdateFocusRequester = remember { FocusRequester() }
 
     var isLocalMode by remember { mutableStateOf(AppDataService.isLocalModeSync()) }
+    var hlsAdSkipEnabled by remember { mutableStateOf(AppDataService.isHlsAdSkipEnabledSync()) }
     // 弹幕默认模式：off（完全关闭）/ manual（默认不开启）/ auto（默认开启）。点按循环。
     var danmakuMode by remember { mutableStateOf(AppDataService.getDanmakuModeSync()) }
     // 弹幕源启用集合（多选）
@@ -420,6 +421,14 @@ fun SettingsTab(
                     value = decodeMode.ifEmpty { "硬解" },
                     onClick = { showDecodeModeDialog = true },
                     modifier = Modifier.focusRequester(decodeModeFocusRequester)
+                )
+                SettingRow(
+                    label = "自动跳过广告片段",
+                    value = if (hlsAdSkipEnabled) "开启" else "关闭",
+                    onClick = {
+                        hlsAdSkipEnabled = !hlsAdSkipEnabled
+                        coroutineScope.launch { AppDataService.setHlsAdSkipEnabled(hlsAdSkipEnabled) }
+                    },
                 )
                 // 弹幕默认模式（点按循环）：关闭=完全不请求/不显示按键；手动=probe 但不自动选源；自动=自动选最佳源。
                 SettingRow(
