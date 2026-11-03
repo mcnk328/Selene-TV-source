@@ -25,6 +25,7 @@ private class HlsAdFilteringDataSource(
 ) : DataSource {
     private var filteredBody: ByteArray? = null
     private var readPosition = 0
+    private var passthroughAfterBuffer = false
 
     override fun addTransferListener(transferListener: TransferListener) {
         upstream.addTransferListener(transferListener)
@@ -33,6 +34,7 @@ private class HlsAdFilteringDataSource(
     override fun open(dataSpec: DataSpec): Long {
         filteredBody = null
         readPosition = 0
+        passthroughAfterBuffer = false
         val length = upstream.open(dataSpec)
         val path = dataSpec.uri.lastPathSegment.orEmpty()
         if (!path.endsWith(".m3u8", ignoreCase = true) ||
@@ -48,7 +50,11 @@ private class HlsAdFilteringDataSource(
             output.write(buffer, 0, count)
             // Avoid buffering unexpectedly large responses. Keep the original
             // playlist intact if it exceeds the conservative manifest limit.
-            if (output.size() > MAX_PLAYLIST_BYTES) return output.size().toLong()
+            if (output.size() > MAX_PLAYLIST_BYTES) {
+                filteredBody = output.toByteArray()
+                passthroughAfterBuffer = true
+                return length
+            }
         }
 
         val original = output.toByteArray()
@@ -62,7 +68,9 @@ private class HlsAdFilteringDataSource(
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         val body = filteredBody ?: return upstream.read(buffer, offset, length)
-        if (readPosition >= body.size) return C.RESULT_END_OF_INPUT
+        if (readPosition >= body.size) {
+            return if (passthroughAfterBuffer) upstream.read(buffer, offset, length) else C.RESULT_END_OF_INPUT
+        }
         val count = minOf(length, body.size - readPosition)
         System.arraycopy(body, readPosition, buffer, offset, count)
         readPosition += count
@@ -76,6 +84,7 @@ private class HlsAdFilteringDataSource(
     override fun close() {
         filteredBody = null
         readPosition = 0
+        passthroughAfterBuffer = false
         upstream.close()
     }
 
