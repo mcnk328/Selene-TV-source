@@ -25,7 +25,7 @@ object MediaHttp {
 
     /** ExoPlayer DefaultMediaSourceFactory 使用的 DataSource 工厂。 */
     val dataSourceFactory: DataSource.Factory by lazy {
-        OkHttpDataSource.Factory(client)
+        HlsAdFilteringDataSourceFactory(OkHttpDataSource.Factory(client))
     }
 
     /** 直播 UA 回退：源未配置 UA 时用 AptvPlayer 默认（与 LiveService 一致）。 */
@@ -34,7 +34,9 @@ object MediaHttp {
     /** 带指定 UA 的 DataSource 工厂（直播源常需 UA，如 AptvPlayer）。 */
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     fun dataSourceFactory(userAgent: String): DataSource.Factory =
-        OkHttpDataSource.Factory(client).setUserAgent(resolveLiveUa(userAgent))
+        HlsAdFilteringDataSourceFactory(
+            OkHttpDataSource.Factory(client).setUserAgent(resolveLiveUa(userAgent))
+        )
 
     private fun createUnsafeOkHttpClient(): OkHttpClient {
         return try {
