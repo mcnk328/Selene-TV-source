@@ -165,10 +165,12 @@ fun SettingsTab(
     val bangumiImageSourceFocusRequester = remember { FocusRequester() }
     val tmdbApiKeyFocusRequester = remember { FocusRequester() }
     val m3u8ProxyFocusRequester = remember { FocusRequester() }
+    val hlsAdKeywordsFocusRequester = remember { FocusRequester() }
 
     // 输入弹框状态
     var showTmdbApiKeyDialog by remember { mutableStateOf(false) }
     var showM3u8ProxyDialog by remember { mutableStateOf(false) }
+    var showHlsAdKeywordsDialog by remember { mutableStateOf(false) }
 
     // 缓存清理确认弹框状态
     var showClearDoubanCacheDialog by remember { mutableStateOf(false) }
@@ -429,6 +431,12 @@ fun SettingsTab(
                         hlsAdSkipEnabled = !hlsAdSkipEnabled
                         coroutineScope.launch { AppDataService.setHlsAdSkipEnabled(hlsAdSkipEnabled) }
                     },
+                )
+                SettingRow(
+                    label = "广告分片关键词",
+                    value = "${AppDataService.getHlsAdSkipKeywordsSync().size} 条",
+                    onClick = { showHlsAdKeywordsDialog = true },
+                    modifier = Modifier.focusRequester(hlsAdKeywordsFocusRequester),
                 )
                 // 弹幕默认模式（点按循环）：关闭=完全不请求/不显示按键；手动=probe 但不自动选源；自动=自动选最佳源。
                 SettingRow(
@@ -736,6 +744,24 @@ fun SettingsTab(
                     AppDataService.saveM3u8ProxyUrl(value)
                     m3u8ProxyUrl = value
                 }
+                onClose()
+            },
+            onDismiss = onClose
+        )
+    }
+
+    // HLS 广告分片关键词输入弹框
+    AnimatedSelectDialog(
+        visible = showHlsAdKeywordsDialog,
+        onDismiss = { showHlsAdKeywordsDialog = false },
+        onClosed = { hlsAdKeywordsFocusRequester.requestFocus() }
+    ) { onClose ->
+        TextInputDialogContent(
+            title = "广告分片关键词",
+            placeholder = "逗号分隔，例如 sponsor,/ad/,advert",
+            initialValue = AppDataService.getHlsAdSkipKeywordsSync().joinToString(","),
+            onConfirm = { value ->
+                coroutineScope.launch { AppDataService.setHlsAdSkipKeywords(value) }
                 onClose()
             },
             onDismiss = onClose
