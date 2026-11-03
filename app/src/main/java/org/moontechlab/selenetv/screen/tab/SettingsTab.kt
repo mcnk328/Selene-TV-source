@@ -190,6 +190,7 @@ fun SettingsTab(
 
     var isLocalMode by remember { mutableStateOf(AppDataService.isLocalModeSync()) }
     var hlsAdSkipEnabled by remember { mutableStateOf(AppDataService.isHlsAdSkipEnabledSync()) }
+    var hlsAdKeywords by remember { mutableStateOf(AppDataService.getHlsAdSkipKeywordsSync().joinToString(",")) }
     // 弹幕默认模式：off（完全关闭）/ manual（默认不开启）/ auto（默认开启）。点按循环。
     var danmakuMode by remember { mutableStateOf(AppDataService.getDanmakuModeSync()) }
     // 弹幕源启用集合（多选）
@@ -434,7 +435,7 @@ fun SettingsTab(
                 )
                 SettingRow(
                     label = "广告分片关键词",
-                    value = "${AppDataService.getHlsAdSkipKeywordsSync().size} 条",
+                    value = "${hlsAdKeywords.split(",", ";", "\\n").count { it.isNotBlank() }} 条",
                     onClick = { showHlsAdKeywordsDialog = true },
                     modifier = Modifier.focusRequester(hlsAdKeywordsFocusRequester),
                 )
@@ -759,8 +760,9 @@ fun SettingsTab(
         TextInputDialogContent(
             title = "广告分片关键词",
             placeholder = "逗号分隔，例如 sponsor,/ad/,advert",
-            initialValue = AppDataService.getHlsAdSkipKeywordsSync().joinToString(","),
+            initialValue = hlsAdKeywords,
             onConfirm = { value ->
+                hlsAdKeywords = value
                 coroutineScope.launch { AppDataService.setHlsAdSkipKeywords(value) }
                 onClose()
             },
