@@ -243,11 +243,14 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
                     org.moontechlab.selenetv.service.SpeedTestService.rank(acc[sourceKey(it)], maxSpeed)
                 }
                 speedResults = HashMap(acc)
-                speedTesting = false
             } catch (e: kotlinx.coroutines.CancellationException) {
                 speedResults = HashMap(acc.filterValues { it.state != org.moontechlab.selenetv.model.SpeedTestState.TESTING })
-                speedTesting = false
                 throw e
+            } catch (_: Exception) {
+                // 防御测速流程中的非预期异常：保留已完成结果，不让异常逃逸到播放页。
+                speedResults = HashMap(acc.filterValues { it.state != org.moontechlab.selenetv.model.SpeedTestState.TESTING })
+            } finally {
+                speedTesting = false
             }
         }
     }
