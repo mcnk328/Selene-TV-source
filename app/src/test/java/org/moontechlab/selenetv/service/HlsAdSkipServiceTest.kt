@@ -47,6 +47,23 @@ class HlsAdSkipServiceTest {
     }
 
     @Test
+    fun parsesDurationAttributeAfterElapsedTime() {
+        val playlist = """
+            #EXTM3U
+            #EXT-X-CUE-OUT:ElapsedTime=0,Duration=8
+            #EXTINF:4.0,
+            ad-0.ts
+            #EXTINF:4.0,
+            ad-1.ts
+        """.trimIndent()
+
+        assertEquals(
+            listOf(HlsAdSkipService.AdSegment(0L, 8_000L)),
+            HlsAdSkipService.parseMediaPlaylist(playlist),
+        )
+    }
+
+    @Test
     fun ignoresPlaylistsWithoutExplicitAdMarkers() {
         val playlist = """
             #EXTM3U
