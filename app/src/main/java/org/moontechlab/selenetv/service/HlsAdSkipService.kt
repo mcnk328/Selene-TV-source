@@ -46,6 +46,11 @@ object HlsAdSkipService {
                     line.equals("#EXT-X-CUE-OUT", ignoreCase = true)) ||
                     line.startsWith("#EXT-X-SCTE35-OUT:", ignoreCase = true) -> {
                     if (adStartMs == null) adStartMs = timelineMs
+                    val value = line.substringAfter(':', line.substringAfter('=', "")).trim()
+                    val durationText = Regex("(?:DURATION=)?([0-9]+(?:\\.[0-9]+)?)", RegexOption.IGNORE_CASE)
+                        .find(value)?.groupValues?.getOrNull(1)
+                    val duration = durationText?.toDoubleOrNull()
+                    if (duration != null && duration > 0) declaredAdDurationMs = (duration * 1000.0).toLong()
                 }
                 line.startsWith("#EXT-X-CUE-IN", ignoreCase = true) ||
                     line.startsWith("#EXT-X-SCTE35-IN", ignoreCase = true) -> closeAd(timelineMs)
