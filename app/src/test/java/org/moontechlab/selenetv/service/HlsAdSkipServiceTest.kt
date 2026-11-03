@@ -64,6 +64,24 @@ class HlsAdSkipServiceTest {
     }
 
     @Test
+    fun recognizesKeywordAdSegmentsForTimelineSkipping() {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:5.0,
+            content-0.ts
+            #EXTINF:6.0,
+            https://cdn.example/ads/preroll.ts?token=abc
+            #EXTINF:5.0,
+            content-1.ts
+        """.trimIndent()
+
+        assertEquals(
+            listOf(HlsAdSkipService.AdSegment(5_000L, 11_000L)),
+            HlsAdSkipService.parseMediaPlaylist(playlist),
+        )
+    }
+
+    @Test
     fun ignoresPlaylistsWithoutExplicitAdMarkers() {
         val playlist = """
             #EXTM3U
