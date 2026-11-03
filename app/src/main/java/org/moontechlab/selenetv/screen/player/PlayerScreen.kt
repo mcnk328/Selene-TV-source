@@ -150,6 +150,8 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
     val hasNext = currentEpisode < epCount - 1
 
     var segments by remember { mutableStateOf<List<org.moontechlab.selenetv.model.SkipSegment>>(emptyList()) }
+    var hlsAdSegments by remember { mutableStateOf<List<org.moontechlab.selenetv.service.HlsAdSkipService.AdSegment>>(emptyList()) }
+    val hlsAdSkipEnabled = remember { org.moontechlab.selenetv.service.AppDataService.isHlsAdSkipEnabledSync() }
     val activeSegment = remember(segments, positionMs, durationMs) {
         org.moontechlab.selenetv.service.IntroSkipService.pickActiveSegment(segments, positionMs, durationMs)
     }
@@ -319,6 +321,36 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
             kotlinx.coroutines.delay(500)
         }
     }
+    // HLS 广告标记识别：仅对 m3u8 播放列表读取明确的 CUE/SCTE 标记；无标记时不猜测。
+    LaunchedEffect(currentEpisode, currentSourceKey, hlsAdSkipEnabled) {
+        hlsAdSegments = emptyList()
+        if (!hlsAdSkipEnabled) return@LaunchedEffect
+        val raw = currentSource?.episodes?.getOrNull(currentEpisode) ?: return@LaunchedEffect
+        if (!raw.contains(".m3u8", ignoreCase = true)) return@LaunchedEffect
+        val proxy = org.moontechlab.selenetv.service.AppDataService.getM3u8ProxyUrl()
+        val playUrl = PlayProgress.buildPlayUrl(raw, proxy)
+        hlsAdSegments = org.moontechlab.selenetv.service.HlsAdSkipService.fetchAdSegments(playUrl)
+    }
+
+    // 播放位置进入明确标记的广告区间时自动 seek 到广告段末尾；ExoPlayer/MPV 共用 VideoPlayer.seekTo。
+    LaunchedEffect(hlsAdSkipEnabled, hlsAdSegments) {
+        if (!hlsAdSkipEnabled || hlsAdSegments.isEmpty()) return@LaunchedEffect
+        val skippedStarts = mutableSetOf<Long>()
+        while (kotlinx.coroutines.isActive) {
+            if (controller.isPlaying) {
+                val position = controller.positionMs
+                val ad = hlsAdSegments.firstOrNull {
+                    position >= it.startMs && position < it.endMs && it.startMs !in skippedStarts
+                }
+                if (ad != null) {
+                    skippedStarts += ad.startMs
+                    controller.seekTo(ad.endMs + 250L)
+                }
+            }
+            kotlinx.coroutines.delay(250L)
+        }
+    }
+
     // 每集拉取跳过段（best-effort，失败空列表）
     LaunchedEffect(currentEpisode, currentSourceKey, launch.tmdbRef) {
         val ref = launch.tmdbRef
