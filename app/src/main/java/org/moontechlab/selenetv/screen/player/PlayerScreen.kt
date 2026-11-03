@@ -321,7 +321,7 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
             kotlinx.coroutines.delay(500)
         }
     }
-    // HLS 广告标记识别：仅对 m3u8 播放列表读取明确的 CUE/SCTE 标记；无标记时不猜测。
+    // MPV 无法在加载器层改写清单：通过 CUE/SCTE 标记或广告分片 URI 计算时间区间后 seek。
     LaunchedEffect(currentEpisode, currentSourceKey, hlsAdSkipEnabled) {
         hlsAdSegments = emptyList()
         if (!hlsAdSkipEnabled || controller !is MpvPlayerController) return@LaunchedEffect
@@ -332,7 +332,7 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
         hlsAdSegments = org.moontechlab.selenetv.service.HlsAdSkipService.fetchAdSegments(playUrl)
     }
 
-    // 播放位置进入明确标记的广告区间时自动 seek 到广告段末尾；ExoPlayer/MPV 共用 VideoPlayer.seekTo。
+    // MPV 播放位置进入广告区间时 seek 到广告段末尾；ExoPlayer 在 DataSource 层直接过滤分片。
     LaunchedEffect(hlsAdSkipEnabled, hlsAdSegments) {
         if (!hlsAdSkipEnabled || controller !is MpvPlayerController || hlsAdSegments.isEmpty()) return@LaunchedEffect
         val skippedStarts = mutableSetOf<Long>()
