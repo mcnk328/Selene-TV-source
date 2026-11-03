@@ -8,8 +8,8 @@ import java.net.URL
 /**
  * Best-effort HLS ad marker reader.
  *
- * Only explicit SCTE-35/CUE markers are treated as ads. It deliberately does not
- * infer ads from segment length, URL names, or video content.
+ * Explicit SCTE-35/CUE markers and configured segment-URI keywords are recognized.
+ * It deliberately does not infer ads from segment length or video content.
  */
 object HlsAdSkipService {
     data class AdSegment(val startMs: Long, val endMs: Long)
