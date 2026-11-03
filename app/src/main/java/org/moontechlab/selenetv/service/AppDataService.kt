@@ -32,6 +32,7 @@ object AppDataService {
     private const val KEY_DECODE_MODE = "decode_mode"
     private const val KEY_SEARCH_ORIGIN = "search_origin"
     private const val KEY_IS_LOCAL_MODE = "is_local_mode"
+    private const val KEY_HLS_AD_SKIP_ENABLED = "hls_ad_skip_enabled"
     private const val KEY_SKIPPED_VERSION = "skipped_version"
     private const val KEY_UPDATE_POSTPONED_UNTIL = "update_postponed_until"
     private const val KEY_DANMAKU_ENABLED = "danmaku_enabled"   // 旧开关（仅迁移读）
@@ -49,6 +50,10 @@ object AppDataService {
 
     // 当前会话的 token（每次启动重新生成）
     private var sessionToken: String = ""
+
+    // HLS 广告标记自动跳过开关（默认开启）
+    @Volatile
+    private var hlsAdSkipEnabledCache: Boolean = true
 
     // 本地模式缓存（同步读，零阻塞）
     @Volatile
@@ -85,6 +90,7 @@ object AppDataService {
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         lowRamCache = computeLowRam(context)
         isLocalModeCache = prefs.getBoolean(KEY_IS_LOCAL_MODE, false)
+        hlsAdSkipEnabledCache = prefs.getBoolean(KEY_HLS_AD_SKIP_ENABLED, true)
         // 区域 off 仍保留（播放页可暂时关闭）。
         val rawArea = prefs.getString(KEY_DANMAKU_AREA, null)
             ?: if (prefs.getBoolean(KEY_DANMAKU_ENABLED, false)) "full" else "off"
@@ -287,6 +293,15 @@ object AppDataService {
 
     /** 同步读，零阻塞；`init()` 时预热缓存。 */
     fun isLocalModeSync(): Boolean = isLocalModeCache
+
+    // ==================== HLS 广告跳过设置 ====================
+
+    suspend fun setHlsAdSkipEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
+        prefs.edit().putBoolean(KEY_HLS_AD_SKIP_ENABLED, enabled).apply()
+        hlsAdSkipEnabledCache = enabled
+    }
+
+    fun isHlsAdSkipEnabledSync(): Boolean = hlsAdSkipEnabledCache
 
     // ==================== 弹幕设置 ====================
 
