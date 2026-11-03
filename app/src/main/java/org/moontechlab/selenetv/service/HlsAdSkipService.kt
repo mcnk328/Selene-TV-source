@@ -42,12 +42,8 @@ object HlsAdSkipService {
                     nextDurationMs = seconds?.takeIf { it > 0.0 }?.let { (it * 1000.0).toLong() }
                 }
                 line.startsWith("#EXT-X-CUE-OUT", ignoreCase = true) ||
-                    line.startsWith("#EXT-OATCLS-SCTE35", ignoreCase = true) ||
                     line.startsWith("#EXT-X-SCTE35-OUT", ignoreCase = true) -> {
                     if (adStartMs == null) adStartMs = timelineMs
-                    val value = line.substringAfter(':', "").trim()
-                    val duration = value.substringBefore(',').toDoubleOrNull()
-                    if (duration != null && duration > 0) declaredAdDurationMs = (duration * 1000.0).toLong()
                 }
                 line.startsWith("#EXT-X-CUE-IN", ignoreCase = true) ||
                     line.startsWith("#EXT-X-SCTE35-IN", ignoreCase = true) -> closeAd(timelineMs)
