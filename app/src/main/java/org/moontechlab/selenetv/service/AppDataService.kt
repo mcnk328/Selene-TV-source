@@ -38,7 +38,6 @@ object AppDataService {
     private const val KEY_DANMAKU_AREA = "danmaku_area"         // 显示区域：off/third/half/full（off=播放页暂时关闭）
     private const val KEY_DANMAKU_LAST_AREA = "danmaku_last_area" // 上次非 off 区域：弹幕「开关」一键开启时恢复到此
     private const val KEY_DANMAKU_MODE = "danmaku_mode"         // 默认模式：off/manual(默认不开启)/auto(默认开启)
-    private const val KEY_AD_BLOCK_ENABLED = "ad_block_enabled"
     private const val KEY_DANMAKU_SOURCES = "danmaku_sources"   // 启用源 key 的 CSV
     private const val KEY_DANMAKU_OPACITY = "danmaku_opacity"        // 不透明度 Float
     private const val KEY_DANMAKU_SPEED = "danmaku_speed"            // 滚动速度倍率 Float
@@ -67,10 +66,6 @@ object AppDataService {
     @Volatile
     private var danmakuModeCache: String = "off"
 
-    // 广告域名拦截开关：新安装默认开启。
-    @Volatile
-    private var adBlockEnabledCache: Boolean = true
-
     // 启用的弹幕源 key 集合缓存（同步读，供播放页并发拉取用）
     @Volatile
     private var danmakuSourcesCache: Set<String> = org.moontechlab.selenetv.service.danmaku.DanmakuSources.defaultEnabledKeys
@@ -90,7 +85,6 @@ object AppDataService {
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         lowRamCache = computeLowRam(context)
         isLocalModeCache = prefs.getBoolean(KEY_IS_LOCAL_MODE, false)
-        adBlockEnabledCache = prefs.getBoolean(KEY_AD_BLOCK_ENABLED, true)
         // 区域 off 仍保留（播放页可暂时关闭）。
         val rawArea = prefs.getString(KEY_DANMAKU_AREA, null)
             ?: if (prefs.getBoolean(KEY_DANMAKU_ENABLED, false)) "full" else "off"
@@ -304,15 +298,6 @@ object AppDataService {
 
     /** 同步读弹幕默认模式（off/manual/auto）。 */
     fun getDanmakuModeSync(): String = danmakuModeCache
-
-    /** 保存广告域名拦截开关；同步更新内存缓存，供播放器网络拦截器即时读取。 */
-    suspend fun setAdBlockEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
-        prefs.edit().putBoolean(KEY_AD_BLOCK_ENABLED, enabled).apply()
-        adBlockEnabledCache = enabled
-    }
-
-    /** 同步读取广告域名拦截开关；全新安装默认开启。 */
-    fun isAdBlockEnabledSync(): Boolean = adBlockEnabledCache
 
     /** 保存弹幕显示区域（third/half/full，仅区域）；同步更新内存缓存。 */
     suspend fun setDanmakuArea(area: String) = withContext(Dispatchers.IO) {
