@@ -48,9 +48,9 @@ object HlsAdSkipService {
                     if (adStartMs == null) adStartMs = timelineMs
                     if (line.startsWith("#EXT-X-CUE-OUT", ignoreCase = true)) {
                         val value = line.substringAfter(':', line.substringAfter('=', "")).trim()
-                        val durationText = Regex("(?:DURATION=)?([0-9]+(?:\\.[0-9]+)?)", RegexOption.IGNORE_CASE)
+                        val durationText = Regex("DURATION=([0-9]+(?:\\.[0-9]+)?)", RegexOption.IGNORE_CASE)
                             .find(value)?.groupValues?.getOrNull(1)
-                        val duration = durationText?.toDoubleOrNull()
+                        val duration = durationText?.toDoubleOrNull() ?: value.substringBefore(',').toDoubleOrNull()
                         if (duration != null && duration > 0) declaredAdDurationMs = (duration * 1000.0).toLong()
                     }
                 }
