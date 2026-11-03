@@ -78,9 +78,18 @@ object SpeedTestService {
             val url = testUrl(source) ?: return@mapNotNull null
             val key = "${source.source}+${source.id}"
             async(Dispatchers.IO) {
-                val result = sourceGate.withPermit {
-                    withTimeoutOrNull(PER_SOURCE_TIMEOUT_MS) { probe(url) }
-                } ?: SourceSpeed(state = SpeedTestState.FAILED)
+                // 单个源的地址可能无效，或在解析/构造 OkHttp Request 时抛出异常。
+                // 将异常限制在当前源，避免 awaitAll() 把整批测速一起取消并导致播放页闪退。
+                val result = try {
+                    sourceGate.withPermit {
+                        withTimeoutOrNull(PER_SOURCE_TIMEOUT_MS) { probe(url) }
+                    } ?: SourceSpeed(state = SpeedTestState.FAILED)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    // 用户主动停止测速或离开页面时，必须保留协程取消语义。
+                    throw e
+                } catch (_: Exception) {
+                    SourceSpeed(state = SpeedTestState.FAILED)
+                }
                 onResult(key, result)
             }
         }.awaitAll()
