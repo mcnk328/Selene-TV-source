@@ -17,7 +17,10 @@ object HlsAdSkipService {
     private const val MAX_PLAYLIST_BYTES = 2 * 1024 * 1024
     private const val DEFAULT_USER_AGENT = "SeleneTV/1.0"
 
-    internal fun parseMediaPlaylist(body: String): List<AdSegment> {
+    internal fun parseMediaPlaylist(
+        body: String,
+        keywords: List<String> = HlsPlaylistAdFilter.defaultKeywords,
+    ): List<AdSegment> {
         if (!body.lineSequence().any { it.trim() == "#EXTM3U" }) return emptyList()
 
         val result = mutableListOf<AdSegment>()
@@ -57,7 +60,14 @@ object HlsAdSkipService {
                 line.startsWith("#EXT-X-CUE-IN", ignoreCase = true) ||
                     line.startsWith("#EXT-X-SCTE35-IN", ignoreCase = true) -> closeAd(timelineMs)
                 line.isNotEmpty() && !line.startsWith("#") -> {
-                    timelineMs += nextDurationMs ?: 0L
+                    val duration = nextDurationMs ?: 0L
+                    val isKeywordAd = keywords.any { keyword ->
+                        keyword.isNotBlank() && line.contains(keyword.trim(), ignoreCase = true)
+                    }
+                    if (isKeywordAd && duration >= 1_000L) {
+                        result += AdSegment(timelineMs, timelineMs + duration)
+                    }
+                    timelineMs += duration
                     nextDurationMs = null
                     val start = adStartMs
                     val declared = declaredAdDurationMs
@@ -72,7 +82,17 @@ object HlsAdSkipService {
             val start = adStartMs!!
             declaredAdDurationMs?.let { closeAd(start + it) }
         }
-        return result
+        if (result.isEmpty()) return emptyList()
+        val merged = mutableListOf<AdSegment>()
+        result.sortedBy { it.startMs }.forEach { segment ->
+            val previous = merged.lastOrNull()
+            if (previous != null && segment.startMs <= previous.endMs) {
+                merged[merged.lastIndex] = AdSegment(previous.startMs, maxOf(previous.endMs, segment.endMs))
+            } else {
+                merged += segment
+            }
+        }
+        return merged
     }
 
     /** Fetch a playlist and follow a master playlist's first variant, if present. */
@@ -87,9 +107,9 @@ object HlsAdSkipService {
                         .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
                         ?: return@runCatching emptyList()
                     val variantUrl = URL(URL(bodyAndUrl.second), variant).toString()
-                    parseMediaPlaylist(fetchText(variantUrl, userAgent).first)
+                    parseMediaPlaylist(fetchText(variantUrl, userAgent).first, AppDataService.getHlsAdSkipKeywordsSync())
                 } else {
-                    parseMediaPlaylist(playlist)
+                    parseMediaPlaylist(playlist, AppDataService.getHlsAdSkipKeywordsSync())
                 }
             }.getOrDefault(emptyList())
         }
