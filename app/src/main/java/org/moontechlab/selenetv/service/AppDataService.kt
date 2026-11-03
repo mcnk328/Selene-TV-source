@@ -318,7 +318,7 @@ object AppDataService {
 
     private fun parseHlsAdSkipKeywords(value: String?): List<String> {
         if (value == null) return HlsPlaylistAdFilter.defaultKeywords
-        return value.split(",", "\\n", ";")
+        return value.split(',', ';', '\n')
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .distinctBy { it.lowercase() }
