@@ -3,6 +3,7 @@ package org.moontechlab.selenetv.service
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import javax.net.ssl.SSLContext
@@ -47,6 +48,21 @@ object MediaHttp {
             OkHttpClient.Builder()
                 .sslSocketFactory(ssl.socketFactory, trustAll[0] as X509TrustManager)
                 .hostnameVerifier { _, _ -> true }
+                .addInterceptor { chain ->
+                    val request = chain.request()
+                    if (AppDataService.isAdBlockEnabledSync() &&
+                        AdBlockService.isBlockedHost(request.url.host)
+                    ) {
+                        okhttp3.Response.Builder()
+                            .request(request)
+                            .protocol(Protocol.HTTP_1_1)
+                            .code(204)
+                            .message("Blocked by SeleneTV")
+                            .build()
+                    } else {
+                        chain.proceed(request)
+                    }
+                }
                 .build()
         } catch (e: Exception) {
             OkHttpClient.Builder().build()
