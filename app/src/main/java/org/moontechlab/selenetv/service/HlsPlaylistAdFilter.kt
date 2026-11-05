@@ -18,8 +18,7 @@ object HlsPlaylistAdFilter {
 
     fun filter(body: String, keywords: List<String>): String {
         if (!body.lineSequence().any { it.trim() == "#EXTM3U" }) return body
-        val normalized = keywords.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
-        if (normalized.isEmpty()) return body
+        if (keywords.none { it.isNotBlank() }) return body
 
         val lines = body.lines()
         val output = ArrayList<String>(lines.size)
@@ -36,14 +35,8 @@ object HlsPlaylistAdFilter {
                     uriIndex++
                 }
                 val uri = lines.getOrNull(uriIndex)?.trim().orEmpty()
-                val isAd = uri.isNotEmpty() &&
-                    normalized.any { keyword -> uri.lowercase().contains(keyword) }
+                val isAd = uri.isNotEmpty() && HlsAdRuleEngine.isAdUri(uri, keywords)
                 if (isAd) {
-                    // A discontinuity immediately attached to this ad segment is
-                    // not meaningful after its segment has been removed.
-                    if (output.lastOrNull()?.trim().equals("#EXT-X-DISCONTINUITY", ignoreCase = true)) {
-                        output.removeAt(output.lastIndex)
-                    }
                     index = uriIndex + 1
                     removedAny = true
                     continue
