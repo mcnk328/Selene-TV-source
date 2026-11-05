@@ -61,9 +61,7 @@ object HlsAdSkipService {
                     line.startsWith("#EXT-X-SCTE35-IN", ignoreCase = true) -> closeAd(timelineMs)
                 line.isNotEmpty() && !line.startsWith("#") -> {
                     val duration = nextDurationMs ?: 0L
-                    val isKeywordAd = keywords.any { keyword ->
-                        keyword.isNotBlank() && line.contains(keyword.trim(), ignoreCase = true)
-                    }
+                    val isKeywordAd = HlsAdRuleEngine.isAdUri(line, keywords)
                     if (isKeywordAd && duration >= 1_000L) {
                         result += AdSegment(timelineMs, timelineMs + duration)
                     }
