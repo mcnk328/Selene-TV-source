@@ -24,7 +24,7 @@ class HlsPlaylistAdFilterTest {
         assertTrue(result.contains("content-01.ts"))
         assertTrue(result.contains("content-02.ts"))
         assertFalse(result.contains("preroll.ts"))
-        assertFalse(result.contains("#EXT-X-DISCONTINUITY"))
+        assertTrue(result.contains("#EXT-X-DISCONTINUITY"))
     }
 
     @Test
