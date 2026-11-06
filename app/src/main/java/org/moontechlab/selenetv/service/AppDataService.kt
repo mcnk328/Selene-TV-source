@@ -34,6 +34,7 @@ object AppDataService {
     private const val KEY_IS_LOCAL_MODE = "is_local_mode"
     private const val KEY_HLS_AD_SKIP_ENABLED = "hls_ad_skip_enabled"
     private const val KEY_HLS_AD_SKIP_KEYWORDS = "hls_ad_skip_keywords"
+    private const val KEY_HLS_STRUCTURE_FILTER_ENABLED = "hls_structure_filter_enabled"
     private const val KEY_SKIPPED_VERSION = "skipped_version"
     private const val KEY_UPDATE_POSTPONED_UNTIL = "update_postponed_until"
     private const val KEY_DANMAKU_ENABLED = "danmaku_enabled"   // 旧开关（仅迁移读）
@@ -58,6 +59,9 @@ object AppDataService {
 
     @Volatile
     private var hlsAdSkipKeywordsCache: List<String> = HlsPlaylistAdFilter.defaultKeywords
+
+    @Volatile
+    private var hlsStructureFilterEnabledCache: Boolean = false
 
     // 本地模式缓存（同步读，零阻塞）
     @Volatile
@@ -96,6 +100,7 @@ object AppDataService {
         isLocalModeCache = prefs.getBoolean(KEY_IS_LOCAL_MODE, false)
         hlsAdSkipEnabledCache = prefs.getBoolean(KEY_HLS_AD_SKIP_ENABLED, true)
         hlsAdSkipKeywordsCache = parseHlsAdSkipKeywords(prefs.getString(KEY_HLS_AD_SKIP_KEYWORDS, null))
+        hlsStructureFilterEnabledCache = prefs.getBoolean(KEY_HLS_STRUCTURE_FILTER_ENABLED, false)
         // 区域 off 仍保留（播放页可暂时关闭）。
         val rawArea = prefs.getString(KEY_DANMAKU_AREA, null)
             ?: if (prefs.getBoolean(KEY_DANMAKU_ENABLED, false)) "full" else "off"
@@ -315,6 +320,13 @@ object AppDataService {
     }
 
     fun getHlsAdSkipKeywordsSync(): List<String> = hlsAdSkipKeywordsCache
+
+    suspend fun setHlsStructureFilterEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
+        prefs.edit().putBoolean(KEY_HLS_STRUCTURE_FILTER_ENABLED, enabled).apply()
+        hlsStructureFilterEnabledCache = enabled
+    }
+
+    fun isHlsStructureFilterEnabledSync(): Boolean = hlsStructureFilterEnabledCache
 
     private fun parseHlsAdSkipKeywords(value: String?): List<String> {
         if (value == null) return HlsPlaylistAdFilter.defaultKeywords
