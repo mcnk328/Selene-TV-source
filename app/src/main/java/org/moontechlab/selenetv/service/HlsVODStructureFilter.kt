@@ -75,7 +75,7 @@ internal object HlsVODStructureFilter {
         val groups = mutableListOf<MutableList<SegmentRecord>>()
         for (record in records) {
             if (record.discontinuityIndex != null && groups.isNotEmpty()) {
-                groups += mutableListOf()
+                groups.add(mutableListOf())
             }
             if (groups.isEmpty()) groups += mutableListOf()
             groups.last() += record
