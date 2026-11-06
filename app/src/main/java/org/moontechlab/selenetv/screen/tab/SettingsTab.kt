@@ -191,6 +191,7 @@ fun SettingsTab(
     var isLocalMode by remember { mutableStateOf(AppDataService.isLocalModeSync()) }
     var hlsAdSkipEnabled by remember { mutableStateOf(AppDataService.isHlsAdSkipEnabledSync()) }
     var hlsAdKeywords by remember { mutableStateOf(AppDataService.getHlsAdSkipKeywordsSync().joinToString(",")) }
+    var hlsStructureFilterEnabled by remember { mutableStateOf(AppDataService.isHlsStructureFilterEnabledSync()) }
     // 弹幕默认模式：off（完全关闭）/ manual（默认不开启）/ auto（默认开启）。点按循环。
     var danmakuMode by remember { mutableStateOf(AppDataService.getDanmakuModeSync()) }
     // 弹幕源启用集合（多选）
@@ -438,6 +439,14 @@ fun SettingsTab(
                     value = "${hlsAdKeywords.split(",", ";", "\n").count { it.isNotBlank() }} 条",
                     onClick = { showHlsAdKeywordsDialog = true },
                     modifier = Modifier.focusRequester(hlsAdKeywordsFocusRequester),
+                )
+                SettingRow(
+                    label = "实验性 HLS 结构过滤",
+                    value = if (hlsStructureFilterEnabled) "开启（仅点播）" else "关闭",
+                    onClick = {
+                        hlsStructureFilterEnabled = !hlsStructureFilterEnabled
+                        coroutineScope.launch { AppDataService.setHlsStructureFilterEnabled(hlsStructureFilterEnabled) }
+                    },
                 )
                 // 弹幕默认模式（点按循环）：关闭=完全不请求/不显示按键；手动=probe 但不自动选源；自动=自动选最佳源。
                 SettingRow(
