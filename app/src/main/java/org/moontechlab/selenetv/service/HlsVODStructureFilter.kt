@@ -46,7 +46,7 @@ internal object HlsVODStructureFilter {
         for (i in lines.indices) {
             val line = lines[i].trim()
             when {
-                line.startsWith("#EXT-X-DISCONTINUITY", ignoreCase = true) -> {
+                line.equals("#EXT-X-DISCONTINUITY", ignoreCase = true) -> {
                     discontinuityIndex = i
                 }
                 line.startsWith("#EXTINF:", ignoreCase = true) -> {
