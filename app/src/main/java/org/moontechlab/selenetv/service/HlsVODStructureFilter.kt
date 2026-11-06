@@ -77,7 +77,7 @@ internal object HlsVODStructureFilter {
             if (record.discontinuityIndex != null && groups.isNotEmpty()) {
                 groups.add(mutableListOf())
             }
-            if (groups.isEmpty()) groups += mutableListOf()
+            if (groups.isEmpty()) groups.add(mutableListOf())
             groups.last() += record
         }
         if (groups.size < 3) return body
