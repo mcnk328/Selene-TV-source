@@ -64,6 +64,7 @@ private class HlsAdFilteringDataSource(
         val rewritten = HlsPlaylistAdFilter.filter(
             original.toString(Charsets.UTF_8),
             AppDataService.getHlsAdSkipKeywordsSync(),
+            enableStructuralFilter = AppDataService.isHlsStructureFilterEnabledSync(),
         ).toByteArray(Charsets.UTF_8)
         filteredBody = rewritten
         return rewritten.size.toLong()
