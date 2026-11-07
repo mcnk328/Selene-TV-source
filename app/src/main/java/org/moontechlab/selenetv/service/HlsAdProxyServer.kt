@@ -68,7 +68,7 @@ object HlsAdProxyServer {
                                         val filtered = if (AppDataService.isHlsAdFilterEnabledSync()) {
                                             HlsAdPlaylistFilter.filter(raw, AppDataService.getHlsAdKeywordsSync())
                                         } else raw
-                                        HlsAdPlaylistFilter.rewriteUris(filtered, upstreamUrl) { childUrl ->
+                                        HlsAdPlaylistFilter.rewriteUris(filtered, upstream.request.url.toString()) { childUrl ->
                                             makeProxyUrl(childUrl, userAgent)
                                         }.toByteArray(StandardCharsets.UTF_8)
                                     } else bytes
