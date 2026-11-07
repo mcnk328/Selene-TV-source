@@ -283,7 +283,7 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
             val proxy = org.moontechlab.selenetv.service.AppDataService.getM3u8ProxyUrl()
             val resolvedUrl = PlayProgress.buildPlayUrl(raw, proxy)
             val playbackUrl = if (org.moontechlab.selenetv.service.AppDataService.isHlsAdFilterEnabledSync()) {
-                org.moontechlab.selenetv.service.HlsAdProxyServer.wrap(resolvedUrl, src?.ua.orEmpty())
+                org.moontechlab.selenetv.service.HlsAdProxyServer.wrap(resolvedUrl)
             } else resolvedUrl
             controller.load(playbackUrl, startMs)
         }
