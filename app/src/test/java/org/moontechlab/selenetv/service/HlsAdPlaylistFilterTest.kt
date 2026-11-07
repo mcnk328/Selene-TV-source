@@ -12,7 +12,7 @@ class HlsAdPlaylistFilterTest {
 #EXTINF:6,
 https://cdn.example/video/0001.ts
 #EXTINF:6,
-https://cdn.example/ads/spot-01.ts
+https://cdn.example/advert/spot-01.ts
 #EXTINF:6,
 https://cdn.example/video/0002.ts
 #EXT-X-ENDLIST"""
