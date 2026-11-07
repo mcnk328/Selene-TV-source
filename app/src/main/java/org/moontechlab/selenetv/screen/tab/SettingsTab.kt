@@ -124,6 +124,8 @@ fun SettingsTab(
     var bangumiImageSource by remember { mutableStateOf("") }
     var tmdbApiKey by remember { mutableStateOf("") }
     var m3u8ProxyUrl by remember { mutableStateOf("") }
+    var hlsAdFilterEnabled by remember { mutableStateOf(false) }
+    var hlsAdKeywords by remember { mutableStateOf(org.moontechlab.selenetv.service.HlsAdPlaylistFilter.DEFAULT_KEYWORDS_TEXT) }
     var playerType by remember { mutableStateOf("") }
     var decodeMode by remember { mutableStateOf("") }
     var searchOrigin by remember { mutableStateOf("") }
@@ -165,10 +167,12 @@ fun SettingsTab(
     val bangumiImageSourceFocusRequester = remember { FocusRequester() }
     val tmdbApiKeyFocusRequester = remember { FocusRequester() }
     val m3u8ProxyFocusRequester = remember { FocusRequester() }
+    val hlsAdKeywordsFocusRequester = remember { FocusRequester() }
 
     // 输入弹框状态
     var showTmdbApiKeyDialog by remember { mutableStateOf(false) }
     var showM3u8ProxyDialog by remember { mutableStateOf(false) }
+    var showHlsAdKeywordsDialog by remember { mutableStateOf(false) }
 
     // 缓存清理确认弹框状态
     var showClearDoubanCacheDialog by remember { mutableStateOf(false) }
@@ -224,6 +228,8 @@ fun SettingsTab(
         bangumiImageSource = AppDataService.getBangumiImageSourceDisplayName()
         tmdbApiKey = AppDataService.getTmdbApiKey()
         m3u8ProxyUrl = AppDataService.getM3u8ProxyUrl()
+        hlsAdFilterEnabled = AppDataService.isHlsAdFilterEnabledSync()
+        hlsAdKeywords = AppDataService.getHlsAdKeywordsSync()
         playerType = AppDataService.getPlayerTypeDisplayName()
         decodeMode = AppDataService.getDecodeModeDisplayName()
         searchOrigin = AppDataService.getSearchOriginDisplayName()
@@ -420,6 +426,21 @@ fun SettingsTab(
                     value = decodeMode.ifEmpty { "硬解" },
                     onClick = { showDecodeModeDialog = true },
                     modifier = Modifier.focusRequester(decodeModeFocusRequester)
+                )
+                SettingRow(
+                    label = "HLS 广告过滤",
+                    value = if (hlsAdFilterEnabled) "开启（仅点播）" else "关闭",
+                    onClick = {
+                        hlsAdFilterEnabled = !hlsAdFilterEnabled
+                        coroutineScope.launch { AppDataService.setHlsAdFilterEnabled(hlsAdFilterEnabled) }
+                    },
+                )
+                SettingRow(
+                    label = "广告 URI 关键词",
+                    value = hlsAdKeywords.ifBlank { "未设置" },
+                    showDivider = false,
+                    onClick = { showHlsAdKeywordsDialog = true },
+                    modifier = Modifier.focusRequester(hlsAdKeywordsFocusRequester)
                 )
                 // 弹幕默认模式（点按循环）：关闭=完全不请求/不显示按键；手动=probe 但不自动选源；自动=自动选最佳源。
                 SettingRow(
@@ -726,6 +747,27 @@ fun SettingsTab(
                 coroutineScope.launch {
                     AppDataService.saveM3u8ProxyUrl(value)
                     m3u8ProxyUrl = value
+                }
+                onClose()
+            },
+            onDismiss = onClose
+        )
+    }
+
+    // HLS 广告 URI 关键词（逗号分隔；仅用于 VOD 分片 URI 匹配）
+    AnimatedSelectDialog(
+        visible = showHlsAdKeywordsDialog,
+        onDismiss = { showHlsAdKeywordsDialog = false },
+        onClosed = { hlsAdKeywordsFocusRequester.requestFocus() }
+    ) { onClose ->
+        TextInputDialogContent(
+            title = "广告 URI 关键词",
+            placeholder = "逗号分隔，例如 advert,vast,sponsor",
+            initialValue = hlsAdKeywords,
+            onConfirm = { value ->
+                coroutineScope.launch {
+                    AppDataService.setHlsAdKeywords(value)
+                    hlsAdKeywords = value
                 }
                 onClose()
             },
