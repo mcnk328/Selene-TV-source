@@ -26,6 +26,8 @@ object AppDataService {
     private const val KEY_BANGUMI_DATA_SOURCE = "bangumi_data_source"
     private const val KEY_BANGUMI_IMAGE_SOURCE = "bangumi_image_source"
     private const val KEY_M3U8_PROXY_URL = "m3u8_proxy_url"
+    private const val KEY_HLS_AD_FILTER_ENABLED = "hls_ad_filter_enabled"
+    private const val KEY_HLS_AD_KEYWORDS = "hls_ad_keywords"
     private const val KEY_TMDB_API_KEY = "tmdb_api_key"
     private const val KEY_SESSION_TOKEN = "session_token"
     private const val KEY_PLAYER_TYPE = "player_type"
@@ -550,6 +552,22 @@ object AppDataService {
      */
     suspend fun getM3u8ProxyUrl(): String = withContext(Dispatchers.IO) {
         prefs.getString(KEY_M3U8_PROXY_URL, "") ?: ""
+    }
+
+    /** HLS VOD 广告过滤默认关闭；同步读取供播放器在起播前决定是否接入本地代理。 */
+    fun isHlsAdFilterEnabledSync(): Boolean = prefs.getBoolean(KEY_HLS_AD_FILTER_ENABLED, false)
+
+    suspend fun setHlsAdFilterEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
+        prefs.edit().putBoolean(KEY_HLS_AD_FILTER_ENABLED, enabled).apply()
+    }
+
+    fun getHlsAdKeywordsSync(): String = prefs.getString(
+        KEY_HLS_AD_KEYWORDS,
+        HlsAdPlaylistFilter.DEFAULT_KEYWORDS_TEXT,
+    ) ?: HlsAdPlaylistFilter.DEFAULT_KEYWORDS_TEXT
+
+    suspend fun setHlsAdKeywords(keywords: String) = withContext(Dispatchers.IO) {
+        prefs.edit().putString(KEY_HLS_AD_KEYWORDS, keywords).apply()
     }
 
     /**
