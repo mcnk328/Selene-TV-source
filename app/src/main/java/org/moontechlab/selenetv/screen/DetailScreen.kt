@@ -410,6 +410,10 @@ fun DetailScreen(entry: DetailEntry, onBack: () -> Unit, onGoToSearch: (String) 
                 val settled = acc.filterValues { it.state != SpeedTestState.TESTING }
                 state = state.copy(speedResults = HashMap(settled), speedTesting = false)
                 throw e
+            } catch (e: Throwable) {
+                // 兜底：引擎已收口异常，这里防的是引擎之外的意外——逃出去就是主线程未捕获异常 → 闪退
+                val settled = acc.filterValues { it.state != SpeedTestState.TESTING }
+                state = state.copy(speedResults = HashMap(settled), speedTesting = false)
             }
         }
     }
