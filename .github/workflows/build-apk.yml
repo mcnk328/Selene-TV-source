@@ -1,0 +1,114 @@
+name: Build APK
+
+# 编译验证 + 产出可安装 APK：
+# - PR / push 到主干：跑单测 + 打包 debug & release，产物作为 artifact 上传
+# - 打 tag（v*）：额外创建 GitHub Release 并附上 APK
+# - 也可在 Actions 页面手动触发（workflow_dispatch）
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+# 同一分支的新提交取消旧构建，避免排队占 runner
+concurrency:
+  group: build-apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # 打 tag 时创建 Release 需要
+
+jobs:
+  build:
+    name: Assemble APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # AGP 9.1 / Gradle 9.3.1 至少需要 JDK 17，用 21 最稳（源码兼容级别仍是 11）
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # compileSdk 36 需要对应 platform 与 build-tools；licenses 由 action 自动接受
+      - name: 安装 Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
+
+      # 缓存 ~/.gradle（依赖 + build cache），命中时构建时间从 10+ 分钟降到 2-3 分钟
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # 签名密码不入库（key.jks 已提交，缺 key.properties 时 release 回退 debug 签名仍可安装）
+      - name: 写入签名配置
+        env:
+          KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
+        run: |
+          if [ -n "$KEYSTORE_PROPERTIES" ]; then
+            printf '%s\n' "$KEYSTORE_PROPERTIES" > key.properties
+            echo "已从 secrets 写入 key.properties，release 使用稳定签名"
+          else
+            echo "::warning::未配置 KEYSTORE_PROPERTIES secret，release 将回退为 debug 签名（可安装，但每次换签需卸载重装）"
+          fi
+
+      - name: 单元测试
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: 打包 debug APK
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: 打包 release APK
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: 解析版本号
+        id: ver
+        run: |
+          VERSION=$(grep -m1 'versionName = ' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=${VERSION:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "版本号: ${VERSION:-unknown}"
+
+      - name: 整理产物
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          mkdir -p dist
+          # splits.abi 会产出 app-arm64-v8a-release.apk / app-armeabi-v7a-release.apk
+          while IFS= read -r f; do
+            name=$(basename "$f" | sed 's/^app-//')
+            cp "$f" "dist/SeleneTV-${VERSION}-${name}"
+          done < <(find app/build/outputs/apk -name '*.apk' -not -name '*-unsigned.apk' | sort)
+          ls -lh dist
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SeleneTV-${{ steps.ver.outputs.version }}-apk
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # 打 tag 时把 APK 附到 Release，方便直接下载安装
+      - name: 发布 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true
