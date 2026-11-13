@@ -1,9 +1,12 @@
 package org.moontechlab.selenetv.service
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -13,6 +16,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.ResponseBody
 import org.moontechlab.selenetv.model.SearchResult
 import org.moontechlab.selenetv.model.SourceSpeed
 import org.moontechlab.selenetv.model.SpeedTestState
@@ -32,9 +36,17 @@ import kotlin.coroutines.resume
  *
  * 资源约束（避免内存峰值 / 线程占用）：
  * - 下载速度只**流式采样固定字节**（[SEGMENT_BYTE_BUDGET]），不缓冲整段 .ts；读够即关闭、中断剩余下载。
+ * - m3u8 / 密钥等文本与小二进制也**限长读取**（[MAX_TEXT_BYTES] / [MAX_KEY_BYTES]），
+ *   防止服务端把测速链接重定向到电影正片时把整部片子读进内存（播放页当时已占用解码缓冲，会直接 OOM）。
  * - 源级并发上限 [MAX_CONCURRENT_SOURCES]，避免一次性扇出「源数 × 3」个整段下载。
  * - 测速 client 设 [CALL_TIMEOUT_MS] 硬上限；网络请求经 [execute] 走 enqueue，协程取消即 `call.cancel()`，
  *   用户停止 / 离开详情页能立即放手，不会在后台继续下载。
+ *
+ * 崩溃边界（本类**任何**非取消异常都不得外泄）：
+ * 超时取消时 OkHttp 正在阻塞读 body，`call.cancel()` 抛出的是 `IOException("Canceled")` 而非
+ * `TimeoutCancellationException`——它会抢在取消信号之前抛出，绕过 `withTimeoutOrNull` 直接冒到调用方。
+ * 调用方（详情页 / 播放页）只 catch `CancellationException`，逃出去就是主线程未捕获异常 → 应用闪退。
+ * 故 [probe] 与 [testAll] 各自把 `Throwable` 收口为 `FAILED`，仅放行取消语义。
  *
  * 网络一律走 [MediaHttp.httpClient]（信任所有证书 / 跳过 hostname 校验），适配自签后端。
  */
@@ -42,6 +54,8 @@ object SpeedTestService {
 
     private const val SEGMENT_SAMPLE = 3              // 取前 N 个分片测速
     private const val SEGMENT_BYTE_BUDGET = 512 * 1024 // 每分片最多采样字节数（512KB）
+    private const val MAX_TEXT_BYTES = 512 * 1024     // m3u8 文本最多读 512KB
+    private const val MAX_KEY_BYTES = 64 * 1024       // 密钥等小二进制最多读 64KB
     private const val MAX_CONCURRENT_SOURCES = 6      // 源级并发上限
     private const val PER_SOURCE_TIMEOUT_MS = 8000L   // 单源协程超时
     private const val CALL_TIMEOUT_MS = 8000L         // 单次 HTTP 调用硬上限
@@ -59,16 +73,35 @@ object SpeedTestService {
     /** 限制同时进行测速的源数量。 */
     private val sourceGate = Semaphore(MAX_CONCURRENT_SOURCES)
 
-    /** 选要测的链接：优先第二集，否则第一集，无集数返回 null。 */
-    fun testUrl(source: SearchResult): String? = when {
-        source.episodes.size >= 2 -> source.episodes[1]
-        source.episodes.isNotEmpty() -> source.episodes[0]
-        else -> null
+    /**
+     * 选要测的链接：优先第二集，否则第一集；返回 null 表示该源不可测。
+     *
+     * 只接受绝对 http(s) 链接：聚合源常给出「相对路径 / 无协议头 / 特殊协议」的集数，
+     * 交给 OkHttp 会在 `Request.Builder.url()` 直接抛 `IllegalArgumentException`（进而闪退），
+     * 故这里提前把它们排除在测速之外（该源不出角标、不参与排序，但播放不受影响）。
+     */
+    fun testUrl(source: SearchResult): String? {
+        val preferred = when {
+            source.episodes.size >= 2 -> source.episodes[1]
+            source.episodes.isNotEmpty() -> source.episodes[0]
+            else -> return null
+        }
+        if (isHttpUrl(preferred)) return preferred
+        return source.episodes.firstOrNull { isHttpUrl(it) }
+    }
+
+    /** 是否为可交给 OkHttp 的绝对 http(s) 链接（空白 / 相对路径 / 特殊协议一律 false）。 */
+    internal fun isHttpUrl(url: String?): Boolean {
+        val u = url?.trim().orEmpty()
+        return u.startsWith("http://", ignoreCase = true) || u.startsWith("https://", ignoreCase = true)
     }
 
     /**
      * 并发测速全部源。每个源测完（成功或失败）立即通过 [onResult] 回调，便于 UI 实时出分。
      * 挂起直到全部完成；调用方取消协程即中断测速（已出的结果保留，在途下载即时放手）。
+     *
+     * 每个源独立收口：单源任何异常（IO / 解析 / OOM）都只让该源记 `FAILED`，
+     * 不传染兄弟源、更不外泄到调用方协程（外泄即播放页闪退）。
      */
     suspend fun testAll(
         sources: List<SearchResult>,
@@ -78,19 +111,40 @@ object SpeedTestService {
             val url = testUrl(source) ?: return@mapNotNull null
             val key = "${source.source}+${source.id}"
             async(Dispatchers.IO) {
-                val result = sourceGate.withPermit {
-                    withTimeoutOrNull(PER_SOURCE_TIMEOUT_MS) { probe(url) }
-                } ?: SourceSpeed(state = SpeedTestState.FAILED)
-                onResult(key, result)
+                val result = try {
+                    sourceGate.withPermit {
+                        withTimeoutOrNull(PER_SOURCE_TIMEOUT_MS) { probe(url) }
+                    } ?: SourceSpeed(state = SpeedTestState.FAILED)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    // 取消引发的 IO 中断可能先于取消信号落地：会话已取消就交回取消语义
+                    currentCoroutineContext().ensureActive()
+                    SourceSpeed(state = SpeedTestState.FAILED)
+                }
+                // UI 回调里的意外异常同样不能反噬测速协程
+                runCatching { onResult(key, result) }
             }
         }.awaitAll()
     }
 
-    /** 解析单条 m3u8 的分辨率与下载速度。任何环节异常 → FAILED。 */
+    /** 解析单条 m3u8 的分辨率与下载速度。任何环节异常 → FAILED（绝不外抛非取消异常）。 */
     private suspend fun probe(streamUrl: String): SourceSpeed = withContext(Dispatchers.IO) {
-        val content = getText(streamUrl) ?: return@withContext SourceSpeed(state = SpeedTestState.FAILED)
+        try {
+            probeOrThrow(streamUrl)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            currentCoroutineContext().ensureActive()
+            SourceSpeed(state = SpeedTestState.FAILED)
+        }
+    }
+
+    /** [probe] 的实际解析逻辑；允许抛异常，由 [probe] 统一收口。 */
+    private suspend fun probeOrThrow(streamUrl: String): SourceSpeed {
+        val content = getText(streamUrl) ?: return SourceSpeed(state = SpeedTestState.FAILED)
         val segments = parseSegments(content, streamUrl)
-        if (segments.isEmpty()) return@withContext SourceSpeed(state = SpeedTestState.FAILED)
+        if (segments.isEmpty()) return SourceSpeed(state = SpeedTestState.FAILED)
 
         val declaredWidth = parseResolutionWidth(content)
         val sample = measureDownloadSpeed(segments)
@@ -102,7 +156,7 @@ object SpeedTestService {
             val plain = if (segmentBytes == null) null else decryptFirstSegmentIfNeeded(content, streamUrl, segmentBytes)
             chooseWidth(0, plain, TsResolutionProbe::parseWidth)
         }
-        SourceSpeed(
+        return SourceSpeed(
             state = SpeedTestState.DONE,
             widthPx = widthPx,
             speedKbps = sample.speedKbps,
@@ -255,9 +309,11 @@ object SpeedTestService {
     /**
      * 流式读取分片,至多 [SEGMENT_BYTE_BUDGET] 字节即停(关闭 body 中断剩余下载)。
      * [capture] 为 true 时(仅首分片)同时把读到的字节留存,供分辨率兜底解析。
+     *
+     * 读中断(超时 / 取消 / 连接重置)不抛异常:已读到的字节仍可用来估算速度。
      */
     private suspend fun sampleSegmentBytes(url: String, capture: Boolean): SegmentSample {
-        val resp = execute(request(url)) ?: return SegmentSample(0)
+        val resp = execute(request(url) ?: return SegmentSample(0)) ?: return SegmentSample(0)
         return resp.use {
             if (!it.isSuccessful) return@use SegmentSample(0)
             val stream = it.body?.byteStream() ?: return@use SegmentSample(0)
@@ -265,7 +321,7 @@ object SpeedTestService {
             val sink = if (capture) java.io.ByteArrayOutputStream(SEGMENT_BYTE_BUDGET) else null
             var total = 0
             while (total < SEGMENT_BYTE_BUDGET) {
-                val n = stream.read(buf)
+                val n = try { stream.read(buf) } catch (_: IOException) { -1 }
                 if (n < 0) break
                 sink?.write(buf, 0, n)
                 total += n
@@ -274,14 +330,55 @@ object SpeedTestService {
         }
     }
 
+    /**
+     * 拉取 m3u8 文本，最多读 [MAX_TEXT_BYTES]。
+     *
+     * 不用 `body.string()`：服务端若把测速链接重定向到大文件（正片 / 整段 ts），
+     * `string()` 会把整个 body 读进内存 —— 播放页此时已占着解码缓冲，直接 OOM 闪退。
+     * 超限时截断到最后一条完整行，避免把残缺 URL 当分片。
+     */
     private suspend fun getText(url: String): String? {
-        val resp = execute(request(url)) ?: return null
-        return resp.use { if (it.isSuccessful) it.body?.string() else null }
+        val resp = execute(request(url) ?: return null) ?: return null
+        return resp.use {
+            if (!it.isSuccessful) return@use null
+            val (bytes, truncated) = readCapped(it.body, MAX_TEXT_BYTES) ?: return@use null
+            val text = String(bytes, Charsets.UTF_8)
+            if (truncated) text.substringBeforeLast('\n', text) else text
+        }
     }
 
+    /** 拉取密钥等小二进制，最多读 [MAX_KEY_BYTES]。 */
     private suspend fun getBytes(url: String): ByteArray? {
-        val resp = execute(request(url)) ?: return null
-        return resp.use { if (it.isSuccessful) it.body?.bytes() else null }
+        val resp = execute(request(url) ?: return null) ?: return null
+        return resp.use {
+            if (!it.isSuccessful) return@use null
+            readCapped(it.body, MAX_KEY_BYTES)?.first
+        }
+    }
+
+    /**
+     * 限长读取 body：最多 [cap] 字节，返回「读到的字节 + 是否被截断」。
+     * 读中断(超时/取消)按 EOF 处理，保留已读部分；body 缺失返回 null。
+     * internal 供单测验证截断行为（这是防 OOM 的关键约束）。
+     */
+    internal fun readCapped(body: ResponseBody?, cap: Int): Pair<ByteArray, Boolean>? {
+        if (body == null) return null
+        return try {
+            val stream = body.byteStream()
+            val out = java.io.ByteArrayOutputStream(minOf(cap, 64 * 1024))
+            val buf = ByteArray(16 * 1024)
+            var total = 0
+            while (total < cap) {
+                val n = try { stream.read(buf) } catch (_: IOException) { -1 }
+                if (n < 0) break
+                val take = minOf(n, cap - total)
+                out.write(buf, 0, take)
+                total += take
+            }
+            out.toByteArray() to (total >= cap)
+        } catch (_: IOException) {
+            null
+        }
     }
 
     /**
@@ -302,10 +399,13 @@ object SpeedTestService {
         })
     }
 
-    private fun request(url: String): Request = Request.Builder()
-        .url(url)
-        .header("User-Agent", UA)
-        .header("Accept", "*/*")
-        .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-        .build()
+    /** 构造请求；非法 URL（畸形 / 空串 / 非 http(s)）返回 null 而不是抛 `IllegalArgumentException`。 */
+    private fun request(url: String): Request? = runCatching {
+        Request.Builder()
+            .url(url.trim())
+            .header("User-Agent", UA)
+            .header("Accept", "*/*")
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .build()
+    }.getOrNull()
 }

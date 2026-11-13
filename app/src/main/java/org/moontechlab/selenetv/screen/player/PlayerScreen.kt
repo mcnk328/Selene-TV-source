@@ -214,6 +214,8 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
     fun openPanel() { controlsVisible = true; panelTab = PanelTab.Detail; panelOpen = true }
 
     // 优选测速:并发测速 → 实时按分重排面板 sources → 每源出分;完成「只重排不切源」(不动 currentSourceKey)。
+    // 兜底约定:这里跑在播放页 Dialog 的作用域里，任何未捕获异常都会经默认 handler 杀掉进程 = 闪退，
+    // 故除取消外的 Throwable 一律就地收口（引擎侧已收口，这层防的是引擎之外的意外，如回调里的排序/NPE）。
     val startSpeedTest: () -> Unit = handler@{
         if (speedTesting) return@handler
         val testable = sources.filter { org.moontechlab.selenetv.service.SpeedTestService.testUrl(it) != null }
@@ -226,10 +228,25 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
         speedTestJob = scope.launch {
             val jobScope = this
             val acc = java.util.concurrent.ConcurrentHashMap(seed)
+            // 结算(完成/取消/异常共用):清掉未完成项(避免「测速中」角标冻结),按已出结果定稿重排。
+            // 重排失败不影响「结束测速」这个关键语义,故内部再包一层。
+            fun settle() {
+                val settled = HashMap(acc.filterValues { it.state != org.moontechlab.selenetv.model.SpeedTestState.TESTING })
+                speedResults = settled
+                runCatching {
+                    val maxSpeed = org.moontechlab.selenetv.service.SpeedTestService.maxSpeed(acc.values)
+                    sources = sources.sortedByDescending {
+                        org.moontechlab.selenetv.service.SpeedTestService.rank(settled[sourceKey(it)], maxSpeed)
+                    }
+                }
+                speedTesting = false
+            }
             try {
                 org.moontechlab.selenetv.service.SpeedTestService.testAll(testable) { key, result ->
                     acc[key] = result
                     jobScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                        // 已结算就丢弃迟到快照:否则旧快照会把「测速中」写回已完成的角标(且重排被打回)
+                        if (!speedTesting) return@launch
                         val snap = HashMap(acc)
                         val maxSpeed = org.moontechlab.selenetv.service.SpeedTestService.maxSpeed(snap.values)
                         sources = sources.sortedByDescending {
@@ -238,16 +255,13 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
                         speedResults = snap
                     }
                 }
-                val maxSpeed = org.moontechlab.selenetv.service.SpeedTestService.maxSpeed(acc.values)
-                sources = sources.sortedByDescending {
-                    org.moontechlab.selenetv.service.SpeedTestService.rank(acc[sourceKey(it)], maxSpeed)
-                }
-                speedResults = HashMap(acc)
-                speedTesting = false
+                settle()
             } catch (e: kotlinx.coroutines.CancellationException) {
-                speedResults = HashMap(acc.filterValues { it.state != org.moontechlab.selenetv.model.SpeedTestState.TESTING })
-                speedTesting = false
+                settle()
                 throw e
+            } catch (e: Throwable) {
+                // 引擎之外的最后一道防线:宁可少一次测速结果,也不能让播放页闪退
+                settle()
             }
         }
     }
